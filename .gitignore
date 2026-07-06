@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+.env
+.env.*
+
+# ML / data
+data/raw/
+data/processed/
+outputs/
+checkpoints/
+*.pt
+*.pth
+*.ckpt
+wandb/
+.mlflow/
+
+# IDE & OS
+.idea/
+.vscode/
+.DS_Store
+*.swp
+*.swo
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Logs
+logs/
+*.log
