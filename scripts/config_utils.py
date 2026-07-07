@@ -2,8 +2,24 @@
 from __future__ import annotations
 
 import ast
+import platform
 
+import torch
 import yaml
+
+
+def get_default_device() -> str:
+    """Pick a sensible default device for the current OS.
+
+    macOS -> mps, Windows -> cuda, otherwise -> cpu.
+    Falls back to cpu if the preferred backend isn't actually available.
+    """
+    system = platform.system()
+    if system == "Darwin" and torch.backends.mps.is_available():
+        return "mps"
+    if system == "Windows" and torch.cuda.is_available():
+        return "cuda"
+    return "cpu"
 
 
 def load_config(path: str, overrides: list[str] | None = None) -> dict:

@@ -9,7 +9,6 @@ Set-Location (Join-Path $PSScriptRoot "..")
 $Python = ".venv\Scripts\python.exe"
 $Config = "configs/cmapss.yaml"
 $CkptDir = "outputs/checkpoints/cmapss_full"
-$Device = if ($env:DEVICE) { $env:DEVICE } else { "cpu" }
 $NSamples = if ($env:N_SAMPLES) { $env:N_SAMPLES } else { "100" }
 $NSteps = if ($env:N_STEPS) { $env:N_STEPS } else { "1000" }
 $NSeeds = if ($env:N_SEEDS) { $env:N_SEEDS } else { "10" }
@@ -19,6 +18,8 @@ if (-not (Test-Path $Python)) {
     uv venv .venv --python 3.11
     uv pip install -p $Python -r requirements.txt
 }
+
+$Device = if ($env:DEVICE) { $env:DEVICE } else { (& $Python -c "from scripts.config_utils import get_default_device; print(get_default_device())").Trim() }
 
 Write-Host "== M1: preparing C-MAPSS data =="
 & $Python scripts/prepare_data.py `
