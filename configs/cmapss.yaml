@@ -1,0 +1,37 @@
+data:
+  processed_dir: data/processed/cmapss
+  T: 24
+
+model:
+  d_hidden: 64
+  ae_layers: 1
+  decoder_type: gru
+  unet_channels: [32, 64, 64]
+  unet_depth: 3
+  d_t: 64
+
+sde:
+  type: vp
+  beta_min: 0.1
+  beta_max: 20
+  n_steps_sample: 1000
+
+train:
+  iter_pre: 5000
+  iter_main: 10000
+  use_alt: false
+  batch_size: 128
+  lr_ae: 0.001
+  lr_score: 0.001
+  ema_decay: 0.999
+  save_every: 5000
+
+eval:
+  n_seeds: 10
+
+smoke_test:
+  iter_pre: 20
+  iter_main: 20
+  n_steps_sample: 10
+  n_samples: 8
+  save_every: 10
