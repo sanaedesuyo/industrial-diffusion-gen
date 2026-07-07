@@ -170,16 +170,23 @@ def recursive_generate(
     n_corrector_steps: int = 1,
     snr: float = 0.16,
     device: str = "cpu",
+    verbose: bool = True,
 ) -> torch.Tensor:
     """Generate x_hat_{1:T} by recursively sampling h_1..h_T then batch-decoding."""
+    import time
+
     h_prev = torch.zeros(n_samples, d_hidden, device=device)  # h_0 = 0
     h_seq = []
-    for _ in range(T):
+    for t in range(T):
+        t_start = time.time()
         h_t = pc_sample_step(
             score_fn, sde, h_prev, n_steps=n_steps, n_corrector_steps=n_corrector_steps, snr=snr, device=device
         )
         h_seq.append(h_t)
         h_prev = h_t
+        if verbose:
+            elapsed = time.time() - t_start
+            print(f"[sample] recursive step {t + 1}/{T} done in {elapsed:.1f}s", flush=True)
     h_all = torch.stack(h_seq, dim=1)  # [n_samples, T, d_hidden]
     x_hat = ae.decoder(h_all)
     return x_hat
@@ -196,6 +203,7 @@ def sample(
     n_corrector_steps: int = 1,
     snr: float = 0.16,
     device: str = "cpu",
+    verbose: bool = True,
 ) -> torch.Tensor:
     ae.eval()
     score_net.eval()
@@ -204,5 +212,15 @@ def sample(
         return score_net(h_s_t, h_cond, s)
 
     return recursive_generate(
-        ae, score_fn, sde, n_samples, T, d_hidden, n_steps=n_steps, n_corrector_steps=n_corrector_steps, snr=snr, device=device
+        ae,
+        score_fn,
+        sde,
+        n_samples,
+        T,
+        d_hidden,
+        n_steps=n_steps,
+        n_corrector_steps=n_corrector_steps,
+        snr=snr,
+        device=device,
+        verbose=verbose,
     )
