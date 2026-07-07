@@ -12,6 +12,7 @@ venv/
 
 # ML / data
 datasets/
+docs/*.pdf
 data/raw/
 data/processed/
 outputs/
