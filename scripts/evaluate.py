@@ -6,7 +6,6 @@ import os
 import sys
 
 import numpy as np
-import torch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -15,7 +14,7 @@ from metrics.predictive import predictive_score
 from metrics.visualization import tsne_plot
 from models import tsgm
 from models.sde import build_sde
-from scripts.config_utils import load_config
+from scripts.config_utils import get_default_device, load_config
 from scripts.sample import load_model
 
 
@@ -27,7 +26,7 @@ def parse_args():
     p.add_argument("--n-seeds", type=int, default=None, help="default: cfg['eval']['n_seeds']")
     p.add_argument("--n-steps-sample", type=int, default=None)
     p.add_argument("--out-dir", default="outputs/reports")
-    p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    p.add_argument("--device", default=get_default_device())
     return p.parse_args()
 
 

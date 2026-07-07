@@ -16,7 +16,7 @@ from models.autoencoder import Autoencoder
 from models.ema import EMA
 from models.score_unet1d import ConditionalScoreUNet1D
 from models.sde import build_sde
-from scripts.config_utils import load_config
+from scripts.config_utils import get_default_device, load_config
 
 
 def parse_args():
@@ -27,7 +27,7 @@ def parse_args():
     p.add_argument("--sde-type", default=None, help="override sde type (vp/subvp)")
     p.add_argument("--n-steps", type=int, default=None)
     p.add_argument("--out", default="outputs/samples/cmapss.npy")
-    p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    p.add_argument("--device", default=get_default_device())
     return p.parse_args()
 
 
