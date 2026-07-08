@@ -18,7 +18,7 @@ sde:
 
 train:
   iter_pre: 5000
-  iter_main: 10000
+  iter_main: 20000
   use_alt: false
   batch_size: 128
   lr_ae: 0.001

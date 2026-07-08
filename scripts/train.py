@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from models import tsgm
 from models.autoencoder import Autoencoder
 from models.ema import EMA
+from models.latent_norm import LatentStandardizer
 from models.score_unet1d import ConditionalScoreUNet1D
 from models.sde import build_sde
 from scripts.config_utils import get_default_device, load_config
@@ -68,33 +69,34 @@ def main():
     tsgm.train_autoencoder(ae, loader, ae_opt, n_iters=iter_pre, device=device, log_every=max(1, iter_pre // 10))
     torch.save(ae.state_dict(), os.path.join(args.out, "ae_pretrain.pt"))
 
+    # Fit latent standardizer on the pretrained AE's encoder outputs so the score
+    # network trains on roughly unit-variance latents, matching the scale the VP/subVP
+    # SDE defaults were designed for (see models/latent_norm.py for the diagnosis).
+    ae.eval()
+    with torch.no_grad():
+        h_all = ae.encoder(torch.from_numpy(train_np).to(device))
+    latent_standardizer = LatentStandardizer(d_hidden).to(device).fit(h_all)
+    print(
+        f"[latent standardizer] fit on train latents: "
+        f"mean_abs={latent_standardizer.mean.abs().mean().item():.4f} "
+        f"std_range=[{latent_standardizer.std.min().item():.4f}, {latent_standardizer.std.max().item():.4f}]"
+    )
+
     print(f"== training score net for {iter_main} iters (use_alt={cfg['train']['use_alt']}) ==")
 
     def checkpoint(step: int):
-        torch.save(
-            {
-                "ae": ae.state_dict(),
-                "score_net": score_net.state_dict(),
-                "ema": ema.state_dict(),
-                "step": step,
-                "d_hidden": d_hidden,
-                "T": T,
-                "D": D,
-            },
-            os.path.join(args.out, f"ckpt_{step}.pt"),
-        )
-        torch.save(
-            {
-                "ae": ae.state_dict(),
-                "score_net": score_net.state_dict(),
-                "ema": ema.state_dict(),
-                "step": step,
-                "d_hidden": d_hidden,
-                "T": T,
-                "D": D,
-            },
-            os.path.join(args.out, "ckpt_latest.pt"),
-        )
+        state = {
+            "ae": ae.state_dict(),
+            "score_net": score_net.state_dict(),
+            "ema": ema.state_dict(),
+            "latent_standardizer": latent_standardizer.state_dict(),
+            "step": step,
+            "d_hidden": d_hidden,
+            "T": T,
+            "D": D,
+        }
+        torch.save(state, os.path.join(args.out, f"ckpt_{step}.pt"))
+        torch.save(state, os.path.join(args.out, "ckpt_latest.pt"))
 
     n_done = 0
     while n_done < iter_main:
@@ -109,6 +111,7 @@ def main():
             use_alt=cfg["train"]["use_alt"],
             ae_optimizer=ae_opt,
             ema=ema,
+            latent_standardizer=latent_standardizer,
             device=device,
             log_every=max(1, chunk // 5),
         )

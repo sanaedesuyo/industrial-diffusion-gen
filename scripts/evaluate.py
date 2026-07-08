@@ -41,11 +41,21 @@ def main():
     n_seeds = args.n_seeds or cfg["eval"]["n_seeds"]
     n_steps = args.n_steps_sample or cfg["sde"]["n_steps_sample"]
 
-    ae, score_net, D, T, d_hidden = load_model(args.checkpoint, cfg, device)
+    ae, score_net, D, T, d_hidden, latent_standardizer = load_model(args.checkpoint, cfg, device)
     sde = build_sde(cfg["sde"]["type"], cfg["sde"]["beta_min"], cfg["sde"]["beta_max"])
 
     print(f"generating {n_samples} synthetic windows (n_steps={n_steps}) for evaluation...")
-    fake = tsgm.sample(ae, score_net, sde, n_samples=n_samples, T=T, d_hidden=d_hidden, n_steps=n_steps, device=device)
+    fake = tsgm.sample(
+        ae,
+        score_net,
+        sde,
+        n_samples=n_samples,
+        T=T,
+        d_hidden=d_hidden,
+        n_steps=n_steps,
+        device=device,
+        latent_standardizer=latent_standardizer,
+    )
     fake_np = fake.cpu().numpy()
 
     disc_scores, pred_scores = [], []

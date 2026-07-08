@@ -8,6 +8,7 @@ import torch.nn as nn
 
 from models.autoencoder import Autoencoder
 from models.ema import EMA
+from models.latent_norm import LatentStandardizer
 from models.sde import SDE
 
 
@@ -47,6 +48,7 @@ def train_score(
     use_alt: bool = False,
     ae_optimizer=None,
     ema: EMA | None = None,
+    latent_standardizer: LatentStandardizer | None = None,
     device: str = "cpu",
     eps: float = 1e-5,
     log_every: int = 100,
@@ -72,6 +74,8 @@ def train_score(
 
         # h_0 = 0 by convention; condition h_{t-1} must be detached (no score-loss gradient into AE)
         h_detached = h.detach()
+        if latent_standardizer is not None:
+            h_detached = latent_standardizer.transform(h_detached)
         h_prev = torch.cat([torch.zeros(B, 1, d_hidden, device=device), h_detached[:, :-1]], dim=1)
 
         h_flat = h_detached.reshape(B * T, d_hidden)
@@ -171,11 +175,16 @@ def recursive_generate(
     snr: float = 0.16,
     device: str = "cpu",
     verbose: bool = True,
+    latent_standardizer: LatentStandardizer | None = None,
 ) -> torch.Tensor:
-    """Generate x_hat_{1:T} by recursively sampling h_1..h_T then batch-decoding."""
+    """Generate x_hat_{1:T} by recursively sampling h_1..h_T then batch-decoding.
+
+    The recursion runs entirely in standardized latent space (matching how the score
+    network was trained); h_all is inverse-standardized right before decoding.
+    """
     import time
 
-    h_prev = torch.zeros(n_samples, d_hidden, device=device)  # h_0 = 0
+    h_prev = torch.zeros(n_samples, d_hidden, device=device)  # h_0 = 0 (already in standardized space)
     h_seq = []
     for t in range(T):
         t_start = time.time()
@@ -188,6 +197,8 @@ def recursive_generate(
             elapsed = time.time() - t_start
             print(f"[sample] recursive step {t + 1}/{T} done in {elapsed:.1f}s", flush=True)
     h_all = torch.stack(h_seq, dim=1)  # [n_samples, T, d_hidden]
+    if latent_standardizer is not None:
+        h_all = latent_standardizer.inverse_transform(h_all)
     x_hat = ae.decoder(h_all)
     return x_hat
 
@@ -204,6 +215,7 @@ def sample(
     snr: float = 0.16,
     device: str = "cpu",
     verbose: bool = True,
+    latent_standardizer: LatentStandardizer | None = None,
 ) -> torch.Tensor:
     ae.eval()
     score_net.eval()
@@ -223,4 +235,5 @@ def sample(
         snr=snr,
         device=device,
         verbose=verbose,
+        latent_standardizer=latent_standardizer,
     )

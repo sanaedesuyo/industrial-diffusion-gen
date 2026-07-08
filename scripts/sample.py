@@ -14,6 +14,7 @@ from data.loaders.base import MinMaxNormalizer
 from models import tsgm
 from models.autoencoder import Autoencoder
 from models.ema import EMA
+from models.latent_norm import LatentStandardizer
 from models.score_unet1d import ConditionalScoreUNet1D
 from models.sde import build_sde
 from scripts.config_utils import get_default_device, load_config
@@ -50,7 +51,13 @@ def load_model(checkpoint_path: str, cfg: dict, device: str):
     ema.load_state_dict(ckpt["ema"])
     ema_score_net = ema.apply_to(score_net).to(device)
 
-    return ae, ema_score_net, D, T, d_hidden
+    latent_standardizer = LatentStandardizer(d_hidden).to(device)
+    if "latent_standardizer" in ckpt:
+        latent_standardizer.load_state_dict(ckpt["latent_standardizer"])
+    else:
+        print("[warn] checkpoint predates latent standardization; using identity (mean=0, std=1)")
+
+    return ae, ema_score_net, D, T, d_hidden, latent_standardizer
 
 
 def main():
@@ -58,12 +65,22 @@ def main():
     cfg = load_config(args.config)
     device = args.device
 
-    ae, score_net, D, T, d_hidden = load_model(args.checkpoint, cfg, device)
+    ae, score_net, D, T, d_hidden, latent_standardizer = load_model(args.checkpoint, cfg, device)
     sde_type = args.sde_type or cfg["sde"]["type"]
     sde = build_sde(sde_type, cfg["sde"]["beta_min"], cfg["sde"]["beta_max"])
     n_steps = args.n_steps or cfg["sde"]["n_steps_sample"]
 
-    x_hat = tsgm.sample(ae, score_net, sde, n_samples=args.n_samples, T=T, d_hidden=d_hidden, n_steps=n_steps, device=device)
+    x_hat = tsgm.sample(
+        ae,
+        score_net,
+        sde,
+        n_samples=args.n_samples,
+        T=T,
+        d_hidden=d_hidden,
+        n_steps=n_steps,
+        device=device,
+        latent_standardizer=latent_standardizer,
+    )
     x_hat_np = x_hat.cpu().numpy()
 
     normalizer_path = os.path.join(cfg["data"]["processed_dir"], "normalizer.npz")
