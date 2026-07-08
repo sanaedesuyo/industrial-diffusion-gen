@@ -183,10 +183,12 @@ class ConditionalScoreMLP(nn.Module):
 def build_score_net(model_cfg: dict, d_hidden: int) -> nn.Module:
     """Build the score network selected by model_cfg['score_net_type'] ('mlp' | 'unet').
 
-    Defaults to 'mlp'. Both construction paths must be reachable from train/sample/eval
-    so old U-Net checkpoints still load when score_net_type is set to 'unet'.
+    Defaults to 'unet', matching the paper's proposed 1D U-Net architecture (Sec.
+    "Conditional Score Network"). 'mlp' (ResMLP+FiLM) is kept as an off-paper variant
+    that was found to lower the discriminative score on C-MAPSS; both construction paths
+    must stay reachable from train/sample/eval so checkpoints of either type still load.
     """
-    net_type = model_cfg.get("score_net_type", "mlp")
+    net_type = model_cfg.get("score_net_type", "unet")
     d_t = model_cfg["d_t"]
     if net_type == "mlp":
         return ConditionalScoreMLP(

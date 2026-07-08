@@ -1,4 +1,5 @@
 data:
+  name: cmapss
   processed_dir: data/processed/cmapss
   T: 24
 
@@ -7,13 +8,15 @@ model:
   ae_layers: 2            # was 1; a slightly deeper GRU AE lowers reconstruction bias
   decoder_type: gru
   decoder_sigmoid: true   # bound decoder output to [0,1] (real data support) -> removes an easy real/fake tell
-  # score network: 'mlp' (residual MLP + FiLM, recommended for low-dim latent vectors)
-  # or 'unet' (legacy conv-over-features net; kept for old checkpoints / ablation)
-  score_net_type: mlp
+  # score network: 'unet' (1D U-Net, the paper's proposed architecture -- default, for
+  # reproduction fidelity) or 'mlp' (residual MLP + FiLM; an off-paper variant that
+  # empirically scored slightly better on C-MAPSS discriminative score, kept as an
+  # override -- see docs/reproduction_plan.md comparison notes)
+  score_net_type: unet
   mlp_width: 256
   mlp_blocks: 4
-  unet_channels: [32, 64, 64]
-  unet_depth: 3
+  unet_channels: [32, 64, 64, 128]  # depth=4, paper's default (Table 5 depth=3 is a sensitivity variant)
+  unet_depth: 4
   d_t: 64
 
 sde:
@@ -42,12 +45,14 @@ train:
                             # n_steps, see the n_steps sweep diagnosis, so this doesn't bias selection)
   select_n_samples: 1460  # was 512; use the full val set -- 512/seed=0 alone was noisy enough to pick a
                             # checkpoint that scored near-zero internally but ~0.31-0.36 under the full protocol
-  select_n_seeds: 2       # averages discriminative over classifier-training seeds on ONE generated fake
-                            # batch. KNOWN LIMITATION: this does not resample the fake batch itself, so it
-                            # does not capture generation-draw variance -- observed twice (both use_alt=false
-                            # and use_alt=true runs) that the "best" checkpoint by this metric still scored
-                            # ~0.31-0.36 under the full 10-seed/3736-sample protocol. Treat ckpt_best.pt as a
-                            # mild heuristic, not a reliable proxy for the true discriminative score.
+  select_n_seeds: 2       # classifier-training seeds averaged per fake batch
+  select_n_fake_batches: 3 # re-samples fake data this many times per selection point (each
+                            # draws fresh noise), so selection now averages 3*2=6 (batch, seed)
+                            # measurements instead of scoring one static fake batch with multiple
+                            # classifier seeds. Fixes the previously-documented gap where the
+                            # "best" checkpoint read ~0.002-0.03 internally but ~0.31-0.36 under
+                            # the full 10-seed/3736-sample protocol (generation-draw variance was
+                            # not captured before). Still a heuristic, just a less noisy one.
 
 eval:
   n_seeds: 10

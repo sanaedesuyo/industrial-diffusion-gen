@@ -1,0 +1,53 @@
+data:
+  name: esa
+  processed_dir: data/processed/esa
+  T: 24
+
+model:
+  d_hidden: 64             # ~4x D=16 channels
+  ae_layers: 2
+  decoder_type: gru
+  decoder_sigmoid: true
+  score_net_type: unet     # paper's 1D U-Net (see models/score_unet1d.py)
+  mlp_width: 256
+  mlp_blocks: 4
+  unet_channels: [32, 64, 64, 128]
+  unet_depth: 4
+  d_t: 64
+
+sde:
+  type: vp
+  beta_min: 0.1
+  beta_max: 20
+  n_steps_sample: 1000
+  n_corrector_steps: 1
+  snr: 0.16
+
+train:
+  # ESA has no analog row in the paper's Table 2 (it's this project's own addition, not
+  # one of the paper's 5 datasets), so we start from the same protocol validated on
+  # C-MAPSS (use_alt=false) rather than guessing -- see docs/reproduction_plan.md.
+  iter_pre: 10000
+  iter_main: 40000
+  use_alt: false
+  ae_noise_std: 0.1
+  batch_size: 128
+  lr_ae: 0.001
+  lr_score: 0.001
+  ema_decay: 0.999
+  save_every: 5000
+  select_best: true
+  select_n_steps: 100
+  select_n_samples: 1000
+  select_n_seeds: 2
+  select_n_fake_batches: 3
+
+eval:
+  n_seeds: 10
+
+smoke_test:
+  iter_pre: 20
+  iter_main: 20
+  n_steps_sample: 10
+  n_samples: 8
+  save_every: 10

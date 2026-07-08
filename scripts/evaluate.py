@@ -35,6 +35,7 @@ def main():
     cfg = load_config(args.config)
     device = args.device
     os.makedirs(args.out_dir, exist_ok=True)
+    dataset_name = cfg["data"].get("name", "cmapss")
 
     test_np = np.load(os.path.join(cfg["data"]["processed_dir"], "test.npy"))
 
@@ -84,7 +85,7 @@ def main():
     disc_mean, disc_std = float(np.mean(disc_scores)), float(np.std(disc_scores))
     pred_mean, pred_std = float(np.mean(pred_scores)), float(np.std(pred_scores))
 
-    report_path = os.path.join(args.out_dir, "cmapss_metrics.csv")
+    report_path = os.path.join(args.out_dir, f"{dataset_name}_metrics.csv")
     report_body = "metric,mean,std\n" f"discriminative,{disc_mean},{disc_std}\n" f"predictive,{pred_mean},{pred_std}\n"
     try:
         with open(report_path, "w") as f:
@@ -93,12 +94,12 @@ def main():
         # e.g. the CSV is open in Excel on Windows; don't lose the whole run.
         import time
 
-        report_path = os.path.join(args.out_dir, f"cmapss_metrics_{int(time.time())}.csv")
+        report_path = os.path.join(args.out_dir, f"{dataset_name}_metrics_{int(time.time())}.csv")
         with open(report_path, "w") as f:
             f.write(report_body)
         print(f"[warn] default report path was locked; wrote to {report_path} instead")
 
-    tsne_path = os.path.join(args.out_dir, "cmapss_tsne.png")
+    tsne_path = os.path.join(args.out_dir, f"{dataset_name}_tsne.png")
     tsne_plot(disc_real_np, fake_np, tsne_path)
 
     print(f"discriminative: {disc_mean:.4f} +/- {disc_std:.4f}")

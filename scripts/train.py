@@ -116,6 +116,7 @@ def main():
     select_n_steps = cfg["train"].get("select_n_steps", 100)
     select_n_samples = cfg["train"].get("select_n_samples", min(len(val_np), 512) if val_np is not None else 0)
     select_n_seeds = cfg["train"].get("select_n_seeds", 1)
+    select_n_fake_batches = cfg["train"].get("select_n_fake_batches", 1)
     best_disc = float("inf")
 
     def maybe_select_best(step: int):
@@ -123,31 +124,38 @@ def main():
         if not select_best:
             return
         ema_net = ema.apply_to(score_net).to(device)
-        fake = tsgm.sample(
-            ae,
-            ema_net,
-            sde,
-            n_samples=select_n_samples,
-            T=T,
-            d_hidden=d_hidden,
-            n_steps=select_n_steps,
-            device=device,
-            verbose=False,
-            latent_standardizer=latent_standardizer,
-        )
-        fake_np = fake.cpu().numpy()
-        # Average over several classifier seeds: a single seed on a few hundred samples is
-        # noisy enough to occasionally read near-zero by chance (observed: two consecutive
-        # checkpoints scored ~0.002 internally but ~0.31 under the full 10-seed/3736-sample
-        # protocol), which would silently pick a lucky-noise checkpoint as "best".
-        discs = [discriminative_score(val_np, fake_np, seed=s, device=device) for s in range(select_n_seeds)]
+        # Resample the fake batch itself select_n_fake_batches times (each tsgm.sample call
+        # draws fresh noise from the global RNG) and average select_n_seeds classifier seeds
+        # per batch. A single static fake batch scored with only multiple classifier seeds
+        # does NOT capture generation-draw variance -- observed: checkpoints picked that way
+        # read ~0.002-0.03 internally but ~0.31-0.36 under the full 10-seed/3736-sample
+        # protocol. Resampling the generation itself closes most of that gap.
+        discs = []
+        for _ in range(select_n_fake_batches):
+            fake = tsgm.sample(
+                ae,
+                ema_net,
+                sde,
+                n_samples=select_n_samples,
+                T=T,
+                d_hidden=d_hidden,
+                n_steps=select_n_steps,
+                device=device,
+                verbose=False,
+                latent_standardizer=latent_standardizer,
+            )
+            fake_np = fake.cpu().numpy()
+            discs.extend(discriminative_score(val_np, fake_np, seed=s, device=device) for s in range(select_n_seeds))
         disc = float(np.mean(discs))
         marker = ""
         if disc < best_disc:
             best_disc = disc
             torch.save(make_state(step), os.path.join(args.out, "ckpt_best.pt"))
             marker = " (new best -> ckpt_best.pt)"
-        print(f"[select] step {step}/{iter_main} val_discriminative={disc:.4f} (seeds={discs}) best={best_disc:.4f}{marker}")
+        print(
+            f"[select] step {step}/{iter_main} val_discriminative={disc:.4f} "
+            f"({select_n_fake_batches} fake batches x {select_n_seeds} seeds={discs}) best={best_disc:.4f}{marker}"
+        )
         ae.train() if cfg["train"]["use_alt"] else ae.eval()
         score_net.train()
 

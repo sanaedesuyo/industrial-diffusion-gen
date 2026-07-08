@@ -1,0 +1,55 @@
+data:
+  name: pm25
+  processed_dir: data/processed/pm25
+  T: 24
+
+model:
+  d_hidden: 96            # ~3x D=36 stations, following the paper's d_in ~ 2-5x D search space
+  ae_layers: 2
+  decoder_type: gru
+  decoder_sigmoid: true
+  score_net_type: unet    # paper's 1D U-Net (see models/score_unet1d.py)
+  mlp_width: 256
+  mlp_blocks: 4
+  unet_channels: [32, 64, 64, 128]
+  unet_depth: 4
+  d_t: 80                 # paper Table 2 "Air" row (our closest analog): d_t=80
+
+sde:
+  type: vp
+  beta_min: 0.1
+  beta_max: 20
+  n_steps_sample: 1000
+  n_corrector_steps: 1
+  snr: 0.16
+
+train:
+  # paper Table 2 "Air" row: use_alt=True, iter_pre=50000, iter_main=40000 (shared across
+  # datasets per the paper's search space in Appendix C). PM25 is the project's Air-domain
+  # analog (reproduction_plan.md), so we start from the paper's own recommended protocol
+  # rather than the use_alt=false choice that was tuned specifically for C-MAPSS's trend-
+  # heavy degradation signal.
+  iter_pre: 50000
+  iter_main: 40000
+  use_alt: true
+  ae_noise_std: 0.1
+  batch_size: 128
+  lr_ae: 0.001
+  lr_score: 0.001
+  ema_decay: 0.999
+  save_every: 5000
+  select_best: true
+  select_n_steps: 100
+  select_n_samples: 1000
+  select_n_seeds: 2
+  select_n_fake_batches: 3
+
+eval:
+  n_seeds: 10
+
+smoke_test:
+  iter_pre: 20
+  iter_main: 20
+  n_steps_sample: 10
+  n_samples: 8
+  save_every: 10
