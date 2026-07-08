@@ -1,0 +1,38 @@
+{
+  "checkpoint": "outputs/checkpoints/esa_full/ckpt_best.pt",
+  "config": "configs/esa.yaml",
+  "device": "cuda",
+  "n_samples": 100,
+  "n_steps": 1000,
+  "n_seeds": 5,
+  "discriminative_mean": 0.09000000357627869,
+  "discriminative_std": 0.060415221580678205,
+  "predictive_mean": 0.026527131721377373,
+  "predictive_std": 0.002994865123356304,
+  "generation_seconds": 167.03035306930542,
+  "total_seconds": 167.21180415153503,
+  "channels": [
+    "channel_12",
+    "channel_13",
+    "channel_14",
+    "channel_15",
+    "channel_16",
+    "channel_17",
+    "channel_18",
+    "channel_19",
+    "channel_20",
+    "channel_21",
+    "channel_22",
+    "channel_23",
+    "channel_24",
+    "channel_25",
+    "channel_26",
+    "channel_27"
+  ],
+  "outputs": {
+    "samples_npy": "outputs/esa_anomaly_inference\\esa_synthetic_samples.npy",
+    "channel_comparison_png": "outputs/esa_anomaly_inference\\esa_channel_comparison.png",
+    "mean_std_band_png": "outputs/esa_anomaly_inference\\esa_mean_std_band.png",
+    "tsne_png": "outputs/esa_anomaly_inference\\esa_tsne.png"
+  }
+}
