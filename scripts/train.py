@@ -11,11 +11,12 @@ from torch.utils.data import DataLoader, TensorDataset
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from metrics.discriminative import discriminative_score
 from models import tsgm
 from models.autoencoder import Autoencoder
 from models.ema import EMA
 from models.latent_norm import LatentStandardizer
-from models.score_unet1d import ConditionalScoreUNet1D
+from models.score_unet1d import build_score_net
 from models.sde import build_sde
 from scripts.config_utils import get_default_device, load_config
 
@@ -42,14 +43,18 @@ def main():
 
     loader = DataLoader(TensorDataset(torch.from_numpy(train_np)), batch_size=cfg["train"]["batch_size"], shuffle=True)
 
+    # Same-distribution holdout for best-checkpoint selection (see prepare_data.py / evaluate.py).
+    val_path = os.path.join(cfg["data"]["processed_dir"], "val.npy")
+    val_np = np.load(val_path) if os.path.exists(val_path) else None
+
     d_hidden = cfg["model"]["d_hidden"]
-    ae = Autoencoder(d_in=D, d_hidden=d_hidden, n_layers=cfg["model"]["ae_layers"]).to(device)
-    score_net = ConditionalScoreUNet1D(
+    ae = Autoencoder(
+        d_in=D,
         d_hidden=d_hidden,
-        d_t=cfg["model"]["d_t"],
-        channels=cfg["model"]["unet_channels"],
-        depth=cfg["model"]["unet_depth"],
+        n_layers=cfg["model"]["ae_layers"],
+        output_sigmoid=cfg["model"].get("decoder_sigmoid", True),
     ).to(device)
+    score_net = build_score_net(cfg["model"], d_hidden).to(device)
     sde = build_sde(cfg["sde"]["type"], cfg["sde"]["beta_min"], cfg["sde"]["beta_max"])
     ema = EMA(score_net, decay=cfg["train"]["ema_decay"])
 
@@ -65,8 +70,11 @@ def main():
         iter_main = cfg["train"]["iter_main"]
         save_every = cfg["train"]["save_every"]
 
-    print(f"== pretraining AE for {iter_pre} iters ==")
-    tsgm.train_autoencoder(ae, loader, ae_opt, n_iters=iter_pre, device=device, log_every=max(1, iter_pre // 10))
+    ae_noise_std = cfg["train"].get("ae_noise_std", 0.0)
+    print(f"== pretraining AE for {iter_pre} iters (ae_noise_std={ae_noise_std}) ==")
+    tsgm.train_autoencoder(
+        ae, loader, ae_opt, n_iters=iter_pre, device=device, log_every=max(1, iter_pre // 10), ae_noise_std=ae_noise_std
+    )
     torch.save(ae.state_dict(), os.path.join(args.out, "ae_pretrain.pt"))
 
     # Fit latent standardizer on the pretrained AE's encoder outputs so the score
@@ -84,8 +92,8 @@ def main():
 
     print(f"== training score net for {iter_main} iters (use_alt={cfg['train']['use_alt']}) ==")
 
-    def checkpoint(step: int):
-        state = {
+    def make_state(step: int) -> dict:
+        return {
             "ae": ae.state_dict(),
             "score_net": score_net.state_dict(),
             "ema": ema.state_dict(),
@@ -95,8 +103,53 @@ def main():
             "T": T,
             "D": D,
         }
+
+    def checkpoint(step: int):
+        state = make_state(step)
         torch.save(state, os.path.join(args.out, f"ckpt_{step}.pt"))
         torch.save(state, os.path.join(args.out, "ckpt_latest.pt"))
+
+    # Best-checkpoint selection: every save_every steps, sample a small batch with EMA
+    # weights (reduced n_steps for speed) and score discriminative against the val holdout;
+    # keep ckpt_best.pt. evaluate.py can then use ckpt_best.pt instead of ckpt_latest.pt.
+    select_best = cfg["train"].get("select_best", True) and val_np is not None
+    select_n_steps = cfg["train"].get("select_n_steps", 100)
+    select_n_samples = cfg["train"].get("select_n_samples", min(len(val_np), 512) if val_np is not None else 0)
+    select_n_seeds = cfg["train"].get("select_n_seeds", 1)
+    best_disc = float("inf")
+
+    def maybe_select_best(step: int):
+        nonlocal best_disc
+        if not select_best:
+            return
+        ema_net = ema.apply_to(score_net).to(device)
+        fake = tsgm.sample(
+            ae,
+            ema_net,
+            sde,
+            n_samples=select_n_samples,
+            T=T,
+            d_hidden=d_hidden,
+            n_steps=select_n_steps,
+            device=device,
+            verbose=False,
+            latent_standardizer=latent_standardizer,
+        )
+        fake_np = fake.cpu().numpy()
+        # Average over several classifier seeds: a single seed on a few hundred samples is
+        # noisy enough to occasionally read near-zero by chance (observed: two consecutive
+        # checkpoints scored ~0.002 internally but ~0.31 under the full 10-seed/3736-sample
+        # protocol), which would silently pick a lucky-noise checkpoint as "best".
+        discs = [discriminative_score(val_np, fake_np, seed=s, device=device) for s in range(select_n_seeds)]
+        disc = float(np.mean(discs))
+        marker = ""
+        if disc < best_disc:
+            best_disc = disc
+            torch.save(make_state(step), os.path.join(args.out, "ckpt_best.pt"))
+            marker = " (new best -> ckpt_best.pt)"
+        print(f"[select] step {step}/{iter_main} val_discriminative={disc:.4f} (seeds={discs}) best={best_disc:.4f}{marker}")
+        ae.train() if cfg["train"]["use_alt"] else ae.eval()
+        score_net.train()
 
     n_done = 0
     while n_done < iter_main:
@@ -117,6 +170,7 @@ def main():
         )
         n_done += chunk
         checkpoint(n_done)
+        maybe_select_best(n_done)
         print(f"[checkpoint] saved at step {n_done}/{iter_main}")
 
     print("training complete")

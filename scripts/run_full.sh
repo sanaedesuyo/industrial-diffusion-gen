@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Full-scale TSGM C-MAPSS run: data prep -> train (iter_pre=5000/iter_main=10000) ->
-# recursive PC sampling (n_steps=1000) -> 10-seed discriminative/predictive/t-SNE evaluation.
-# See docs/reproduction_plan.md for the reproduction plan this follows.
+# Full-scale TSGM C-MAPSS run: data prep -> train -> recursive PC sampling (n_steps=1000)
+# -> 10-seed discriminative/predictive/t-SNE evaluation. Iteration counts, score-net type,
+# SDE, etc. all come from configs/cmapss.yaml. See docs/reproduction_plan.md.
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -26,16 +26,20 @@ echo "== M1: preparing C-MAPSS data =="
   --out data/processed/cmapss \
   --T 24
 
-echo "== M2/M3: full training (iter_pre=5000, iter_main=10000) on device=$DEVICE =="
+echo "== M2/M3: full training (counts from $CONFIG) on device=$DEVICE =="
 "$PYTHON" scripts/train.py \
   --config "$CONFIG" \
   --out "$CKPT_DIR" \
   --device "$DEVICE"
 
+# Prefer the best-by-val checkpoint if selection produced one, else the latest.
+if [ -f "$CKPT_DIR/ckpt_best.pt" ]; then CKPT="$CKPT_DIR/ckpt_best.pt"; else CKPT="$CKPT_DIR/ckpt_latest.pt"; fi
+echo "== using checkpoint $CKPT =="
+
 echo "== M4: recursive PC sampling (n_samples=$N_SAMPLES, n_steps=$N_STEPS) =="
 "$PYTHON" scripts/sample.py \
   --config "$CONFIG" \
-  --checkpoint "$CKPT_DIR/ckpt_latest.pt" \
+  --checkpoint "$CKPT" \
   --n-samples "$N_SAMPLES" \
   --n-steps "$N_STEPS" \
   --out outputs/samples/cmapss.npy \
@@ -44,7 +48,7 @@ echo "== M4: recursive PC sampling (n_samples=$N_SAMPLES, n_steps=$N_STEPS) =="
 echo "== M5: evaluation (n_seeds=$N_SEEDS) =="
 "$PYTHON" scripts/evaluate.py \
   --config "$CONFIG" \
-  --checkpoint "$CKPT_DIR/ckpt_latest.pt" \
+  --checkpoint "$CKPT" \
   --n-seeds "$N_SEEDS" \
   --device "$DEVICE"
 

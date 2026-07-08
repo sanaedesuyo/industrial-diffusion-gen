@@ -37,6 +37,19 @@ def main():
     os.makedirs(args.out_dir, exist_ok=True)
 
     test_np = np.load(os.path.join(cfg["data"]["processed_dir"], "test.npy"))
+
+    # Discriminative real reference: same-distribution holdout (val.npy) carved from the
+    # train units, following the TimeGAN/TSGM protocol. The generator only ever saw the
+    # train distribution, so comparing fake against a slice of it isolates generation
+    # quality. Fall back to test.npy for pre-val datasets (this reintroduces the
+    # train/test engine-unit shift, so a warning is printed).
+    val_path = os.path.join(cfg["data"]["processed_dir"], "val.npy")
+    if os.path.exists(val_path):
+        disc_real_np = np.load(val_path)
+    else:
+        print("[warn] val.npy not found; discriminative falls back to test.npy (train/test shift inflates the score). Re-run prepare_data.py.")
+        disc_real_np = test_np
+
     n_samples = args.n_samples or len(test_np)
     n_seeds = args.n_seeds or cfg["eval"]["n_seeds"]
     n_steps = args.n_steps_sample or cfg["sde"]["n_steps_sample"]
@@ -53,6 +66,8 @@ def main():
         T=T,
         d_hidden=d_hidden,
         n_steps=n_steps,
+        n_corrector_steps=cfg["sde"].get("n_corrector_steps", 1),
+        snr=cfg["sde"].get("snr", 0.16),
         device=device,
         latent_standardizer=latent_standardizer,
     )
@@ -60,7 +75,7 @@ def main():
 
     disc_scores, pred_scores = [], []
     for seed in range(n_seeds):
-        d = discriminative_score(test_np, fake_np, seed=seed, device=device)
+        d = discriminative_score(disc_real_np, fake_np, seed=seed, device=device)
         p = predictive_score(fake_np, test_np, seed=seed, device=device)
         disc_scores.append(d)
         pred_scores.append(p)
@@ -70,13 +85,21 @@ def main():
     pred_mean, pred_std = float(np.mean(pred_scores)), float(np.std(pred_scores))
 
     report_path = os.path.join(args.out_dir, "cmapss_metrics.csv")
-    with open(report_path, "w") as f:
-        f.write("metric,mean,std\n")
-        f.write(f"discriminative,{disc_mean},{disc_std}\n")
-        f.write(f"predictive,{pred_mean},{pred_std}\n")
+    report_body = "metric,mean,std\n" f"discriminative,{disc_mean},{disc_std}\n" f"predictive,{pred_mean},{pred_std}\n"
+    try:
+        with open(report_path, "w") as f:
+            f.write(report_body)
+    except PermissionError:
+        # e.g. the CSV is open in Excel on Windows; don't lose the whole run.
+        import time
+
+        report_path = os.path.join(args.out_dir, f"cmapss_metrics_{int(time.time())}.csv")
+        with open(report_path, "w") as f:
+            f.write(report_body)
+        print(f"[warn] default report path was locked; wrote to {report_path} instead")
 
     tsne_path = os.path.join(args.out_dir, "cmapss_tsne.png")
-    tsne_plot(test_np, fake_np, tsne_path)
+    tsne_plot(disc_real_np, fake_np, tsne_path)
 
     print(f"discriminative: {disc_mean:.4f} +/- {disc_std:.4f}")
     print(f"predictive:     {pred_mean:.4f} +/- {pred_std:.4f}")

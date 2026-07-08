@@ -124,3 +124,82 @@ class ConditionalScoreUNet1D(nn.Module):
 
         x = torch.nn.functional.interpolate(x, size=2 * self.d_hidden, mode="nearest")
         return self.out_proj(x)
+
+
+class FiLMResBlock(nn.Module):
+    """Pre-norm residual MLP block with per-block FiLM (scale+shift) time conditioning."""
+
+    def __init__(self, width: int, d_t: int):
+        super().__init__()
+        self.norm = nn.LayerNorm(width)
+        self.lin1 = nn.Linear(width, width)
+        self.lin2 = nn.Linear(width, width)
+        self.film = nn.Linear(d_t, 2 * width)
+        self.act = nn.SiLU()
+
+    def forward(self, x: torch.Tensor, t_emb: torch.Tensor) -> torch.Tensor:
+        h = self.norm(x)
+        h = self.act(self.lin1(h))
+        scale, shift = self.film(t_emb).chunk(2, dim=-1)
+        h = h * (1 + scale) + shift
+        h = self.lin2(h)
+        return x + h
+
+
+class ConditionalScoreMLP(nn.Module):
+    """Conditional score network M_theta(s, h_t^s, h_{t-1}) as a residual MLP + FiLM.
+
+    The score net operates on low-dimensional latent *vectors* with no spatial/temporal
+    structure along the feature axis, so a plain residual MLP with FiLM time conditioning
+    is the principled model (vs. the conv-over-features U-Net, whose locality prior is
+    meaningless here). Same interface and "direct score output" convention as
+    ConditionalScoreUNet1D, so the training loss and sampler are unchanged.
+    """
+
+    def __init__(self, d_hidden: int = 64, d_t: int = 64, width: int = 256, n_blocks: int = 4):
+        super().__init__()
+        self.d_hidden = d_hidden
+
+        self.time_embed = nn.Sequential(
+            SinusoidalTimeEmbedding(d_t),
+            nn.Linear(d_t, d_t),
+            nn.SiLU(),
+            nn.Linear(d_t, d_t),
+        )
+        self.in_proj = nn.Linear(2 * d_hidden, width)
+        self.blocks = nn.ModuleList([FiLMResBlock(width, d_t) for _ in range(n_blocks)])
+        self.out_norm = nn.LayerNorm(width)
+        self.out_proj = nn.Linear(width, d_hidden)
+
+    def forward(self, h_s_t: torch.Tensor, h_cond: torch.Tensor, s: torch.Tensor) -> torch.Tensor:
+        # h_s_t, h_cond: [B, d_hidden]; s: [B] -> predicted score [B, d_hidden]
+        t_emb = self.time_embed(s)
+        x = self.in_proj(torch.cat([h_s_t, h_cond], dim=-1))
+        for block in self.blocks:
+            x = block(x, t_emb)
+        return self.out_proj(self.out_norm(x))
+
+
+def build_score_net(model_cfg: dict, d_hidden: int) -> nn.Module:
+    """Build the score network selected by model_cfg['score_net_type'] ('mlp' | 'unet').
+
+    Defaults to 'mlp'. Both construction paths must be reachable from train/sample/eval
+    so old U-Net checkpoints still load when score_net_type is set to 'unet'.
+    """
+    net_type = model_cfg.get("score_net_type", "mlp")
+    d_t = model_cfg["d_t"]
+    if net_type == "mlp":
+        return ConditionalScoreMLP(
+            d_hidden=d_hidden,
+            d_t=d_t,
+            width=model_cfg.get("mlp_width", 256),
+            n_blocks=model_cfg.get("mlp_blocks", 4),
+        )
+    if net_type == "unet":
+        return ConditionalScoreUNet1D(
+            d_hidden=d_hidden,
+            d_t=d_t,
+            channels=model_cfg["unet_channels"],
+            depth=model_cfg["unet_depth"],
+        )
+    raise ValueError(f"unknown score_net_type: {net_type} (expected 'mlp' or 'unet')")

@@ -1,6 +1,6 @@
-# Full-scale TSGM C-MAPSS run: data prep -> train (iter_pre=5000/iter_main=10000) ->
-# recursive PC sampling (n_steps=1000) -> 10-seed discriminative/predictive/t-SNE evaluation.
-# See docs/reproduction_plan.md for the reproduction plan this follows.
+# Full-scale TSGM C-MAPSS run: data prep -> train -> recursive PC sampling (n_steps=1000)
+# -> 10-seed discriminative/predictive/t-SNE evaluation. Iteration counts, score-net type,
+# SDE, etc. all come from configs/cmapss.yaml. See docs/reproduction_plan.md.
 
 $ErrorActionPreference = "Stop"
 
@@ -27,16 +27,20 @@ Write-Host "== M1: preparing C-MAPSS data =="
     --out data/processed/cmapss `
     --T 24
 
-Write-Host "== M2/M3: full training (iter_pre=5000, iter_main=10000) on device=$Device =="
+Write-Host "== M2/M3: full training (counts from $Config) on device=$Device =="
 & $Python scripts/train.py `
     --config $Config `
     --out $CkptDir `
     --device $Device
 
+# Prefer the best-by-val checkpoint if selection produced one, else the latest.
+$Ckpt = if (Test-Path "$CkptDir/ckpt_best.pt") { "$CkptDir/ckpt_best.pt" } else { "$CkptDir/ckpt_latest.pt" }
+Write-Host "== using checkpoint $Ckpt =="
+
 Write-Host "== M4: recursive PC sampling (n_samples=$NSamples, n_steps=$NSteps) =="
 & $Python scripts/sample.py `
     --config $Config `
-    --checkpoint "$CkptDir/ckpt_latest.pt" `
+    --checkpoint $Ckpt `
     --n-samples $NSamples `
     --n-steps $NSteps `
     --out outputs/samples/cmapss.npy `
@@ -45,7 +49,7 @@ Write-Host "== M4: recursive PC sampling (n_samples=$NSamples, n_steps=$NSteps) 
 Write-Host "== M5: evaluation (n_seeds=$NSeeds) =="
 & $Python scripts/evaluate.py `
     --config $Config `
-    --checkpoint "$CkptDir/ckpt_latest.pt" `
+    --checkpoint $Ckpt `
     --n-seeds $NSeeds `
     --device $Device
 

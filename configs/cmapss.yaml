@@ -4,27 +4,50 @@ data:
 
 model:
   d_hidden: 64
-  ae_layers: 1
+  ae_layers: 2            # was 1; a slightly deeper GRU AE lowers reconstruction bias
   decoder_type: gru
+  decoder_sigmoid: true   # bound decoder output to [0,1] (real data support) -> removes an easy real/fake tell
+  # score network: 'mlp' (residual MLP + FiLM, recommended for low-dim latent vectors)
+  # or 'unet' (legacy conv-over-features net; kept for old checkpoints / ablation)
+  score_net_type: mlp
+  mlp_width: 256
+  mlp_blocks: 4
   unet_channels: [32, 64, 64]
   unet_depth: 3
   d_t: 64
 
 sde:
-  type: vp
+  type: vp               # validated baseline; try 'subvp' as an override experiment
   beta_min: 0.1
   beta_max: 20
   n_steps_sample: 1000
+  n_corrector_steps: 1   # try 2-4 to trade sampling cost for fidelity
+  snr: 0.16
 
 train:
-  iter_pre: 5000
-  iter_main: 20000
-  use_alt: false
+  iter_pre: 10000         # was 5000
+  iter_main: 40000        # was 20000
+  use_alt: false           # tried true (joint AE+score fine-tuning): result was WORSE (discriminative
+                            # 0.3618 vs 0.3134) -- the AE overfit/memorized training windows (recon_loss ->
+                            # ~3e-6) under joint fine-tuning, degrading the latent manifold's smoothness and
+                            # the score net's fit (score_loss rose from 0.085 to 0.11 over training). Reverted.
+  ae_noise_std: 0.1       # denoising-AE noise (standardized-latent units); 0 disables
   batch_size: 128
   lr_ae: 0.001
   lr_score: 0.001
   ema_decay: 0.999
   save_every: 5000
+  select_best: true       # keep ckpt_best.pt by val discriminative
+  select_n_steps: 100     # cheap sampling for selection only (validated: discriminative is insensitive to
+                            # n_steps, see the n_steps sweep diagnosis, so this doesn't bias selection)
+  select_n_samples: 1460  # was 512; use the full val set -- 512/seed=0 alone was noisy enough to pick a
+                            # checkpoint that scored near-zero internally but ~0.31-0.36 under the full protocol
+  select_n_seeds: 2       # averages discriminative over classifier-training seeds on ONE generated fake
+                            # batch. KNOWN LIMITATION: this does not resample the fake batch itself, so it
+                            # does not capture generation-draw variance -- observed twice (both use_alt=false
+                            # and use_alt=true runs) that the "best" checkpoint by this metric still scored
+                            # ~0.31-0.36 under the full 10-seed/3736-sample protocol. Treat ckpt_best.pt as a
+                            # mild heuristic, not a reliable proxy for the true discriminative score.
 
 eval:
   n_seeds: 10

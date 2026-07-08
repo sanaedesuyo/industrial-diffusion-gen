@@ -15,7 +15,7 @@ from models import tsgm
 from models.autoencoder import Autoencoder
 from models.ema import EMA
 from models.latent_norm import LatentStandardizer
-from models.score_unet1d import ConditionalScoreUNet1D
+from models.score_unet1d import build_score_net
 from models.sde import build_sde
 from scripts.config_utils import get_default_device, load_config
 
@@ -36,15 +36,15 @@ def load_model(checkpoint_path: str, cfg: dict, device: str):
     ckpt = torch.load(checkpoint_path, map_location=device)
     D, T, d_hidden = ckpt["D"], ckpt["T"], ckpt["d_hidden"]
 
-    ae = Autoencoder(d_in=D, d_hidden=d_hidden, n_layers=cfg["model"]["ae_layers"]).to(device)
+    ae = Autoencoder(
+        d_in=D,
+        d_hidden=d_hidden,
+        n_layers=cfg["model"]["ae_layers"],
+        output_sigmoid=cfg["model"].get("decoder_sigmoid", True),
+    ).to(device)
     ae.load_state_dict(ckpt["ae"])
 
-    score_net = ConditionalScoreUNet1D(
-        d_hidden=d_hidden,
-        d_t=cfg["model"]["d_t"],
-        channels=cfg["model"]["unet_channels"],
-        depth=cfg["model"]["unet_depth"],
-    ).to(device)
+    score_net = build_score_net(cfg["model"], d_hidden).to(device)
     score_net.load_state_dict(ckpt["score_net"])
 
     ema = EMA(score_net, decay=cfg["train"]["ema_decay"])
@@ -78,6 +78,8 @@ def main():
         T=T,
         d_hidden=d_hidden,
         n_steps=n_steps,
+        n_corrector_steps=cfg["sde"].get("n_corrector_steps", 1),
+        snr=cfg["sde"].get("snr", 0.16),
         device=device,
         latent_standardizer=latent_standardizer,
     )

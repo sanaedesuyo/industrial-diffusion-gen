@@ -17,23 +17,30 @@ class GRUEncoder(nn.Module):
 
 
 class GRUDecoder(nn.Module):
-    def __init__(self, d_hidden: int, d_in: int, n_layers: int = 1):
+    def __init__(self, d_hidden: int, d_in: int, n_layers: int = 1, output_sigmoid: bool = True):
         super().__init__()
         self.gru = nn.GRU(d_hidden, d_hidden, num_layers=n_layers, batch_first=True)
         self.fc = nn.Linear(d_hidden, d_in)
+        self.output_sigmoid = output_sigmoid
 
     def forward(self, h: torch.Tensor) -> torch.Tensor:
         # h: [B, T, d_hidden] -> x_hat: [B, T, d_in]
         out, _ = self.gru(h)
-        return self.fc(out)
+        x_hat = self.fc(out)
+        # Data is MinMax-normalized to [0,1]; a sigmoid ties the decoder output to that
+        # exact support so out-of-range spill can't be an easy real/fake tell for the
+        # discriminator (and so sampler-produced latents decode into valid range).
+        if self.output_sigmoid:
+            x_hat = torch.sigmoid(x_hat)
+        return x_hat
 
 
 class Autoencoder(nn.Module):
-    def __init__(self, d_in: int, d_hidden: int, n_layers: int = 1):
+    def __init__(self, d_in: int, d_hidden: int, n_layers: int = 1, output_sigmoid: bool = True):
         super().__init__()
         self.d_hidden = d_hidden
         self.encoder = GRUEncoder(d_in, d_hidden, n_layers)
-        self.decoder = GRUDecoder(d_hidden, d_in, n_layers)
+        self.decoder = GRUDecoder(d_hidden, d_in, n_layers, output_sigmoid=output_sigmoid)
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         h = self.encoder(x)

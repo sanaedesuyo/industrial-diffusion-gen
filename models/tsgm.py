@@ -18,7 +18,22 @@ def _cycle(loader):
             yield batch
 
 
-def train_autoencoder(ae: Autoencoder, train_loader, optimizer, n_iters: int, device="cpu", log_every: int = 100):
+def train_autoencoder(
+    ae: Autoencoder,
+    train_loader,
+    optimizer,
+    n_iters: int,
+    device="cpu",
+    log_every: int = 100,
+    ae_noise_std: float = 0.0,
+):
+    """Pretrain the AE with reconstruction loss.
+
+    When ae_noise_std > 0 this is a *denoising* AE: Gaussian noise scaled per-dimension by
+    the batch latent std (i.e. ~ae_noise_std in standardized-latent units) is injected
+    before decoding, so the decoder learns to tolerate the slightly-off latents the
+    diffusion sampler produces instead of decoding them into unrealistic x.
+    """
     ae.train()
     history = []
     data_iter = _cycle(train_loader)
@@ -27,7 +42,13 @@ def train_autoencoder(ae: Autoencoder, train_loader, optimizer, n_iters: int, de
         if isinstance(x, (list, tuple)):
             x = x[0]
         x = x.to(device)
-        _, x_hat = ae(x)
+        if ae_noise_std > 0:
+            h = ae.encoder(x)
+            scale = h.detach().reshape(-1, h.shape[-1]).std(dim=0).clamp_min(1e-6)
+            h_noisy = h + ae_noise_std * scale * torch.randn_like(h)
+            x_hat = ae.decoder(h_noisy)
+        else:
+            _, x_hat = ae(x)
         loss = ae.reconstruction_loss(x, x_hat)
         optimizer.zero_grad()
         loss.backward()
@@ -128,8 +149,18 @@ def pc_sample_step(
     snr: float = 0.16,
     eps: float = 1e-3,
     device: str = "cpu",
+    temperature: float = 1.0,
 ) -> torch.Tensor:
-    """Predictor-Corrector sampler generating a single latent timestep h_t given h_{t-1}."""
+    """Predictor-Corrector sampler generating a single latent timestep h_t given h_{t-1}.
+
+    temperature scales the injected stochastic noise in both the corrector (Langevin) and
+    predictor (reverse-diffusion Euler-Maruyama) steps. Diagnosed root cause: generated
+    windows have ~40% excess trend/slope magnitude vs. real windows despite matching
+    per-timestep marginals and lag-1 autocorrelation, and this gap is insensitive to
+    n_corrector_steps/snr -- i.e. not an integration artifact but the score net being
+    mildly over-dispersed. temperature<1 is standard low-temperature sampling to trade
+    diversity for fidelity when the learned conditional variance is too high.
+    """
     B, d_hidden = h_prev.shape
     h_s = sde.prior_sampling((B, d_hidden), device=device)
     time_steps = torch.linspace(1.0, eps, n_steps, device=device)
@@ -146,7 +177,7 @@ def pc_sample_step(
             grad_norm = grad.flatten(1).norm(dim=-1).mean()
             noise_norm = noise.flatten(1).norm(dim=-1).mean()
             step_size = (snr * noise_norm / (grad_norm + 1e-12)) ** 2 * 2
-            h_s = h_s + step_size * grad + torch.sqrt(2 * step_size) * noise
+            h_s = h_s + step_size * grad + torch.sqrt(2 * step_size) * noise * temperature
 
         # Predictor: reverse-diffusion / Euler-Maruyama
         drift, diffusion = sde.sde(h_s, s_batch)
@@ -155,7 +186,7 @@ def pc_sample_step(
         reverse_drift = drift - diffusion**2 * score
         h_mean = h_s - reverse_drift * ds
         if i < n_steps - 1:
-            h_s = h_mean + diffusion * torch.sqrt(ds) * torch.randn_like(h_s)
+            h_s = h_mean + diffusion * torch.sqrt(ds) * torch.randn_like(h_s) * temperature
         else:
             h_s = h_mean
 
@@ -176,6 +207,7 @@ def recursive_generate(
     device: str = "cpu",
     verbose: bool = True,
     latent_standardizer: LatentStandardizer | None = None,
+    temperature: float = 1.0,
 ) -> torch.Tensor:
     """Generate x_hat_{1:T} by recursively sampling h_1..h_T then batch-decoding.
 
@@ -189,7 +221,14 @@ def recursive_generate(
     for t in range(T):
         t_start = time.time()
         h_t = pc_sample_step(
-            score_fn, sde, h_prev, n_steps=n_steps, n_corrector_steps=n_corrector_steps, snr=snr, device=device
+            score_fn,
+            sde,
+            h_prev,
+            n_steps=n_steps,
+            n_corrector_steps=n_corrector_steps,
+            snr=snr,
+            device=device,
+            temperature=temperature,
         )
         h_seq.append(h_t)
         h_prev = h_t
@@ -216,6 +255,7 @@ def sample(
     device: str = "cpu",
     verbose: bool = True,
     latent_standardizer: LatentStandardizer | None = None,
+    temperature: float = 1.0,
 ) -> torch.Tensor:
     ae.eval()
     score_net.eval()
@@ -236,4 +276,5 @@ def sample(
         device=device,
         verbose=verbose,
         latent_standardizer=latent_standardizer,
+        temperature=temperature,
     )
