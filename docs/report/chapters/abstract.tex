@@ -1,0 +1,20 @@
+% 摘要
+\clearpage
+\thispagestyle{fancy}
+\begin{center}
+{\zihao{3}\heiti \reporttitle}
+\end{center}
+
+\vspace{1.2em}
+\begin{center}
+{\zihao{-3}\heiti 摘\ \ 要}
+\end{center}
+\vspace{0.6em}
+
+{\zihao{4}\songti
+工业过程与设备运行中产生的多元时序数据具有采样规则、维度较高、动力学复杂等特点，对其进行高质量的合成生成，可为异常检测、健康预测等下游任务提供数据增强与仿真验证手段。本课题面向 AAAI 2023 论文《Regular Time-series Generation using SGM》（TSGM）的方法开展复现工作，并将其从原论文中的金融、能源、空气质量场景迁移应用到工业时序场景。TSGM 将 score-based（扩散）生成模型引入“规则时序生成”任务：先用 GRU 自编码器把原始序列 $x_{1:T}$ 映射到隐空间 $h_{1:T}$，再训练一个以上一时刻隐向量 $h_{t-1}$ 为条件的一维 U-Net 条件分数网络，在 VP/subVP 随机微分方程框架下学习隐空间中的条件分数，最终通过递归 Predictor-Corrector 采样逐步生成 $\hat h_{1:T}$，并由解码器一次性还原为合成序列。本课题按论文 Algorithm 1 完整实现了自编码器预训练与分数网络主训练两阶段流程，并在涡扇发动机退化仿真数据集 C-MAPSS、北京 PM2.5 空气质量数据集 PM25，以及欧空局卫星遥测异常数据集 ESA Anomaly Dataset 三个数据集上完成训练、递归采样与基于 TimeGAN 协议的 10 随机种子评估（判别得分、预测得分、t-SNE 可视化）。实验结果表明，ESA、PM25 上的判别得分分别达到 $0.0716\pm0.0193$ 与 $0.2454\pm0.0179$，预测得分在三个数据集上均接近论文报告水平；而 C-MAPSS 判别得分明显偏高（$0.3281\pm0.0830$），经对照实验确认这并非实现缺陷，而是该方法基于单步马尔可夫条件假设难以刻画 C-MAPSS 强单调退化趋势这一结构性局限。本课题同时对训练中的 checkpoint 选择方差、递归采样保真度等工程问题进行了诊断与改进，相关代码与结果已整理归档。
+
+}
+
+\vspace{1.0em}
+\noindent{\zihao{4}\heiti 关键词：}{\zihao{4}\songti 扩散模型，条件分数网络，规则时序生成，工业时序数据}

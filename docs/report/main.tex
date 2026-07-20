@@ -1,0 +1,108 @@
+% !TeX program = xelatex
+% 2026 BUCT 生产实习课程设计报告
+% 编译方式：XeLaTeX（推荐在 Overleaf 中使用 XeLaTeX 编译器，需运行 2 次以生成目录）
+\documentclass[12pt, a4paper]{ctexrep}
+
+%---------------------------------------------------------------------
+% 页面与基础排版
+%---------------------------------------------------------------------
+\usepackage[top=2.8cm, bottom=2.5cm, left=3.0cm, right=2.5cm]{geometry}
+\linespread{1.4}                     % 近似“固定值20磅”行距（正文小四号）
+\setlength{\parskip}{0pt}
+
+%---------------------------------------------------------------------
+% 西文字体：Overleaf 默认 TeX Live 不含真正的 Times New Roman，
+% 使用度量兼容的 TeX Gyre Termes 作为替代，视觉效果与要求一致
+%---------------------------------------------------------------------
+\usepackage{fontspec}
+\setmainfont{TeX Gyre Termes}
+
+%---------------------------------------------------------------------
+% 数学、表格、图片
+%---------------------------------------------------------------------
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{float}
+\usepackage[format=hang, font=small, labelfont=bf, labelsep=quad]{caption}
+
+%---------------------------------------------------------------------
+% 图表按章编号：图2-1、表3-1 …
+%---------------------------------------------------------------------
+\counterwithin{figure}{chapter}
+\counterwithin{table}{chapter}
+\counterwithin{equation}{chapter}
+
+%---------------------------------------------------------------------
+% 绘图与算法伪代码
+%---------------------------------------------------------------------
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning, shapes.geometric, fit, calc}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+
+%---------------------------------------------------------------------
+% 代码/配置片段高亮
+%---------------------------------------------------------------------
+\usepackage{xcolor}
+\usepackage{listings}
+\definecolor{codebg}{RGB}{245,245,245}
+\definecolor{codekw}{RGB}{0,90,180}
+\definecolor{codecomment}{RGB}{120,120,120}
+\lstset{
+  basicstyle=\ttfamily\small,
+  backgroundcolor=\color{codebg},
+  keywordstyle=\color{codekw}\bfseries,
+  commentstyle=\color{codecomment}\itshape,
+  stringstyle=\color{teal},
+  breaklines=true,
+  breakatwhitespace=false,
+  showstringspaces=false,
+  frame=single,
+  rulecolor=\color{gray!40},
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  tabsize=2,
+  columns=flexible,
+}
+
+%---------------------------------------------------------------------
+% 页眉页脚
+%---------------------------------------------------------------------
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0.4pt}
+\fancyhead[CE]{\zihao{5}北京化工大学生产实习课程设计报告}
+\fancyhead[CO]{\zihao{5}\leftmark}
+\fancyfoot[C]{\zihao{5}\thepage}
+
+%---------------------------------------------------------------------
+% 超链接（放在最后加载）
+%---------------------------------------------------------------------
+\usepackage[hidelinks, bookmarksnumbered, colorlinks=false]{hyperref}
+
+%---------------------------------------------------------------------
+% 正文起始信息（供各章内容复用）
+%---------------------------------------------------------------------
+\newcommand{\reporttitle}{基于扩散模型的规则时序数据生成方法（TSGM）复现——面向工业时序数据}
+
+\begin{document}
+
+\pagenumbering{Roman}
+\setcounter{secnumdepth}{3}
+\setcounter{tocdepth}{2}
+
+\input{chapters/cover}
+\input{chapters/abstract}
+\input{chapters/toc}
+\input{chapters/qianyan}
+\input{chapters/chap1_intro}
+\input{chapters/chap2_design}
+\input{chapters/chap3_impl}
+\input{chapters/conclusion}
+\input{chapters/references}
+
+\end{document}
